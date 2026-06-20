@@ -5,6 +5,19 @@
     "description": "CSCI 44052 Assignment 1 - API validation using JSONPlaceholder",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://jsonplaceholder.typicode.com",
+      "type": "string"
+    },
+    {
+      "key": "postId",
+      "value": "",
+      "type": "string",
+      "description": "Populated by POST /posts test — used by DELETE /posts/:id"
+    }
+  ],
   "item": [
     {
       "name": "GET /posts",
@@ -17,8 +30,14 @@
               "    pm.response.to.have.status(200);",
               "});",
               "",
-              "pm.test('Response time is under 200ms', function () {",
-              "    pm.expect(pm.response.responseTime).to.be.below(200);",
+              "// List endpoint returns all 100 posts (~8KB payload) — 2000ms SLA reflects",
+              "// the higher transfer overhead vs a single-record lookup",
+              "pm.test('Response time is under 2000ms (list endpoint SLA)', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+              "});",
+              "",
+              "pm.test('Response content-type is application/json', function () {",
+              "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
               "});",
               "",
               "pm.test('Response is a JSON array', function () {",
@@ -45,9 +64,8 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "https://jsonplaceholder.typicode.com/posts",
-          "protocol": "https",
-          "host": ["jsonplaceholder", "typicode", "com"],
+          "raw": "{{baseUrl}}/posts",
+          "host": ["{{baseUrl}}"],
           "path": ["posts"]
         }
       }
@@ -63,8 +81,13 @@
               "    pm.response.to.have.status(200);",
               "});",
               "",
-              "pm.test('Response time is under 200ms', function () {",
+              "// Read operations are expected to respond within 200ms (low-latency read SLA)",
+              "pm.test('Response time is under 200ms (read SLA)', function () {",
               "    pm.expect(pm.response.responseTime).to.be.below(200);",
+              "});",
+              "",
+              "pm.test('Response content-type is application/json', function () {",
+              "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
               "});",
               "",
               "pm.test('Single post has correct schema', function () {",
@@ -83,10 +106,46 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "https://jsonplaceholder.typicode.com/posts/1",
-          "protocol": "https",
-          "host": ["jsonplaceholder", "typicode", "com"],
+          "raw": "{{baseUrl}}/posts/1",
+          "host": ["{{baseUrl}}"],
           "path": ["posts", "1"]
+        }
+      }
+    },
+    {
+      "name": "GET /posts/99999 (404 Not Found)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status code is 404 Not Found for missing resource', function () {",
+              "    pm.response.to.have.status(404);",
+              "});",
+              "",
+              "// 404 responses still require a full network round trip to the server —",
+              "// 1500ms SLA reflects this while being tighter than write operation thresholds",
+              "pm.test('Response time is under 1500ms (not-found SLA)', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(1500);",
+              "});",
+              "",
+              "pm.test('Response body is empty object for missing resource', function () {",
+              "    const body = pm.response.json();",
+              "    pm.expect(body).to.be.an('object');",
+              "    pm.expect(Object.keys(body).length).to.equal(0);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/posts/99999",
+          "host": ["{{baseUrl}}"],
+          "path": ["posts", "99999"]
         }
       }
     },
@@ -102,8 +161,14 @@
               "    pm.expect(pm.response.json().id).to.be.a('number');",
               "});",
               "",
-              "pm.test('Response time is under 2000ms', function () {",
+              "// Write operations carry server-side processing overhead — 2000ms SLA",
+              "// vs 200ms for read-only endpoints which serve cached data",
+              "pm.test('Response time is under 2000ms (write operation SLA)', function () {",
               "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+              "});",
+              "",
+              "pm.test('Response content-type is application/json', function () {",
+              "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
               "});",
               "",
               "pm.test('Created post reflects sent data', function () {",
@@ -119,7 +184,10 @@
               "    pm.expect(body).to.have.property('title').that.is.a('string');",
               "    pm.expect(body).to.have.property('body').that.is.a('string');",
               "    pm.expect(body).to.have.property('userId').that.is.a('number');",
-              "});"
+              "});",
+              "",
+              "// Store the created post ID for use in the DELETE request",
+              "pm.collectionVariables.set('postId', pm.response.json().id);"
             ],
             "type": "text/javascript"
           }
@@ -138,15 +206,14 @@
           "raw": "{\n  \"title\": \"CSCI 44052 Test Post\",\n  \"body\": \"This is a test post body for the assignment.\",\n  \"userId\": 1\n}"
         },
         "url": {
-          "raw": "https://jsonplaceholder.typicode.com/posts",
-          "protocol": "https",
-          "host": ["jsonplaceholder", "typicode", "com"],
+          "raw": "{{baseUrl}}/posts",
+          "host": ["{{baseUrl}}"],
           "path": ["posts"]
         }
       }
     },
     {
-      "name": "DELETE /posts/1",
+      "name": "DELETE /posts/:postId",
       "event": [
         {
           "listen": "test",
@@ -156,15 +223,20 @@
               "    pm.response.to.have.status(200);",
               "});",
               "",
-              "pm.test('Response time is under 2000ms', function () {",
-              "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+              "// Delete operations are faster than creates (no body processing) but",
+              "// slower than reads — 1000ms SLA reflects this middle ground",
+              "pm.test('Response time is under 1000ms (delete operation SLA)', function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(1000);",
               "});",
               "",
               "pm.test('Response body is empty object after deletion', function () {",
               "    const body = pm.response.json();",
               "    pm.expect(body).to.be.an('object');",
               "    pm.expect(Object.keys(body).length).to.equal(0);",
-              "});"
+              "});",
+              "",
+              "// Clean up variable after use",
+              "pm.collectionVariables.unset('postId');"
             ],
             "type": "text/javascript"
           }
@@ -174,10 +246,9 @@
         "method": "DELETE",
         "header": [],
         "url": {
-          "raw": "https://jsonplaceholder.typicode.com/posts/1",
-          "protocol": "https",
-          "host": ["jsonplaceholder", "typicode", "com"],
-          "path": ["posts", "1"]
+          "raw": "{{baseUrl}}/posts/{{postId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["posts", "{{postId}}"]
         }
       }
     }

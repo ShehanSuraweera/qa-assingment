@@ -1,37 +1,38 @@
 const { test, expect } = require('@playwright/test');
 
-// Target: https://the-internet.herokuapp.com/login
+// Target: https://the-internet.herokuapp.com (baseURL set in playwright.config.js)
 // Known credentials: tomsmith / SuperSecretPassword!
+
+const CREDENTIALS = {
+  valid:   { username: 'tomsmith',  password: 'SuperSecretPassword!' },
+  invalid: { username: 'wronguser', password: 'wrongpassword' },
+};
+
+async function login(page, { username, password }) {
+  await page.goto('/login');
+  await page.fill('#username', username);
+  await page.fill('#password', password);
+  await page.click('button[type="submit"]');
+}
 
 test.describe('User Authentication Tests', () => {
 
   test('Verify successful platform user authentication', async ({ page }) => {
-    await page.goto('https://the-internet.herokuapp.com/login');
-
-    // Populate login form selectors
-    await page.fill('#username', 'tomsmith');
-    await page.fill('#password', 'SuperSecretPassword!');
-    await page.click('button[type="submit"]');
+    await login(page, CREDENTIALS.valid);
 
     // Dynamic structural assertion — no arbitrary timeouts
-    const flashMessage = page.locator('#flash');
-    await expect(flashMessage).toContainText('You logged into a secure area!');
+    await expect(page.locator('#flash')).toContainText('You logged into a secure area!');
   });
 
   test('Verify failed login shows error message', async ({ page }) => {
-    await page.goto('https://the-internet.herokuapp.com/login');
-
-    await page.fill('#username', 'wronguser');
-    await page.fill('#password', 'wrongpassword');
-    await page.click('button[type="submit"]');
+    await login(page, CREDENTIALS.invalid);
 
     // Assert error state — dynamic, not timeout-based
-    const flashMessage = page.locator('#flash');
-    await expect(flashMessage).toContainText('Your username is invalid!');
+    await expect(page.locator('#flash')).toContainText('Your username is invalid!');
   });
 
   test('Verify login page has required UI components', async ({ page }) => {
-    await page.goto('https://the-internet.herokuapp.com/login');
+    await page.goto('/login');
 
     // Assert all form elements are present and visible
     await expect(page.locator('#username')).toBeVisible();
@@ -40,11 +41,7 @@ test.describe('User Authentication Tests', () => {
   });
 
   test('Verify logout after successful login', async ({ page }) => {
-    await page.goto('https://the-internet.herokuapp.com/login');
-
-    await page.fill('#username', 'tomsmith');
-    await page.fill('#password', 'SuperSecretPassword!');
-    await page.click('button[type="submit"]');
+    await login(page, CREDENTIALS.valid);
 
     // Wait for navigation to secure area — dynamic assertion
     await expect(page).toHaveURL(/secure/);
